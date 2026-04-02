@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>檔案轉換器</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>檔案轉換器</h1>
+    <p class="subtitle">支援圖片與文件格式轉換</p>
+
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-icon">📁</div>
+      <p>拖曳檔案到這裡，或</p>
+      <label class="btn-upload" for="fileInput">選擇檔案</label>
+      <input type="file" id="fileInput" hidden>
+      <p class="drop-hint" id="fileHint">尚未選擇檔案</p>
+    </div>
+
+    <div class="format-section" id="formatSection" style="display:none">
+      <label>輸出格式</label>
+      <div class="format-grid" id="formatGrid"></div>
+    </div>
+
+    <button class="btn-convert" id="convertBtn" disabled>轉換</button>
+
+    <div class="status" id="status"></div>
+
+    <details class="supported-list">
+      <summary>支援的轉換格式</summary>
+      <div id="supportedList" class="format-table"></div>
+    </details>
+  </div>
+
+  <script>
+    let selectedFile = null;
+    let selectedFormat = null;
+    let formatsData = {};
+
+    async function loadFormats() {
+      const res = await fetch('/formats');
+      const data = await res.json();
+      formatsData = data.supported;
+      renderSupportedList();
+    }
+
+    function renderSupportedList() {
+      const el = document.getElementById('supportedList');
+      let html = '<table><tr><th>輸入</th><th>可轉換為</th></tr>';
+      for (const [ext, targets] of Object.entries(formatsData)) {
+        html += `<tr><td><code>.${ext}</code></td><td>${targets.map(t => `<code>.${t}</code>`).join(', ')}</td></tr>`;
+      }
+      html += '</table>';
+      el.innerHTML = html;
+    }
+
+    function onFileSelected(file) {
+      selectedFile = file;
+      selectedFormat = null;
+      document.getElementById('fileHint').textContent = file.name;
+      document.getElementById('convertBtn').disabled = true;
+
+      const ext = file.name.split('.').pop().toLowerCase();
+      const targets = formatsData[ext] || [];
+      const section = document.getElementById('formatSection');
+      const grid = document.getElementById('formatGrid');
+
+      if (targets.length === 0) {
+        section.style.display = 'none';
+        setStatus('不支援此格式：' + ext, 'error');
+        return;
+      }
+
+      setStatus('');
+      section.style.display = 'block';
+      grid.innerHTML = targets.map(t =>
+        `<button class="format-btn" data-fmt="${t}">.${t}</button>`
+      ).join('');
+
+      grid.querySelectorAll('.format-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          grid.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          selectedFormat = btn.dataset.fmt;
+          document.getElementById('convertBtn').disabled = false;
+        });
+      });
+    }
+
+    document.getElementById('fileInput').addEventListener('change', e => {
+      if (e.target.files[0]) onFileSelected(e.target.files[0]);
+    });
+
+    const dropZone = document.getElementById('dropZone');
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) onFileSelected(e.dataTransfer.files[0]);
+    });
+
+    document.getElementById('convertBtn').addEventListener('click', async () => {
+      if (!selectedFile || !selectedFormat) return;
+
+      const btn = document.getElementById('convertBtn');
+      btn.disabled = true;
+      btn.textContent = '轉換中...';
+      setStatus('處理中，請稍候...', 'info');
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('output_format', selectedFormat);
+
+      try {
+        const res = await fetch('/convert', { method: 'POST', body: formData });
+        if (!res.ok) {
+          const err = await res.json();
+          setStatus('錯誤：' + err.error, 'error');
+          return;
+        }
+
+        const blob = await res.blob();
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        const filename = match ? match[1] : `output.${selectedFormat}`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus('轉換完成，已開始下載！', 'success');
+      } catch (e) {
+        setStatus('連線錯誤：' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '轉換';
+      }
+    });
+
+    function setStatus(msg, type = '') {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.className = 'status ' + type;
+    }
+
+    loadFormats();
+  </script>
+</body>
+</html>
