@@ -262,6 +262,12 @@ let cropMode = 'ratio', cropRW = 1, cropRH = 1;
 // 選框（相對於顯示圖的像素）
 let sel = {x:0, y:0, w:0, h:0, valid:false};
 let dragging = false, dragStart = {x:0, y:0};
+let dragMode = 'draw'; // 'draw' | 'move'
+let moveOffset = {x:0, y:0};
+
+function isInSel(p) {
+  return sel.valid && p.x >= sel.x && p.x <= sel.x+sel.w && p.y >= sel.y && p.y <= sel.y+sel.h;
+}
 
 const cropImg    = document.getElementById('crop-img');
 const cropOverlay= document.getElementById('crop-overlay');
@@ -349,17 +355,38 @@ function getPointerPos(e) {
 function startDrag(e) {
   e.preventDefault();
   const p = getPointerPos(e);
-  dragStart = p; dragging = true;
-  sel = {x:p.x, y:p.y, w:0, h:0, valid:false};
+  dragging = true;
+  if (isInSel(p)) {
+    dragMode = 'move';
+    moveOffset = {x: p.x - sel.x, y: p.y - sel.y};
+  } else {
+    dragMode = 'draw';
+    dragStart = p;
+    sel = {x:p.x, y:p.y, w:0, h:0, valid:false};
+  }
 }
 
 function moveDrag(e) {
-  if (!dragging) return;
+  // 更新 cursor（非拖拉中）
+  if (!dragging) {
+    const p = getPointerPos(e);
+    cropOverlay.style.cursor = isInSel(p) ? 'move' : 'crosshair';
+    return;
+  }
   e.preventDefault();
   const p = getPointerPos(e);
+  const dw = cropImg.offsetWidth, dh = cropImg.offsetHeight;
+
+  if (dragMode === 'move') {
+    sel.x = Math.max(0, Math.min(p.x - moveOffset.x, dw - sel.w));
+    sel.y = Math.max(0, Math.min(p.y - moveOffset.y, dh - sel.h));
+    renderSel(); updateCoords();
+    return;
+  }
+
+  // draw mode
   let dx = p.x - dragStart.x;
   let dy = p.y - dragStart.y;
-  const dw = cropImg.offsetWidth, dh = cropImg.offsetHeight;
 
   if (cropMode === 'ratio') {
     const ratio = cropRW / cropRH;
