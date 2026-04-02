@@ -7,148 +7,331 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="container">
-    <h1>檔案轉換器</h1>
-    <p class="subtitle">支援圖片與文件格式轉換</p>
+<div class="container">
+  <h1>檔案轉換器</h1>
 
-    <div class="drop-zone" id="dropZone">
-      <div class="drop-icon">📁</div>
-      <p>拖曳檔案到這裡，或</p>
-      <label class="btn-upload" for="fileInput">選擇檔案</label>
-      <input type="file" id="fileInput" hidden>
-      <p class="drop-hint" id="fileHint">尚未選擇檔案</p>
-    </div>
-
-    <div class="format-section" id="formatSection" style="display:none">
-      <label>輸出格式</label>
-      <div class="format-grid" id="formatGrid"></div>
-    </div>
-
-    <button class="btn-convert" id="convertBtn" disabled>轉換</button>
-
-    <div class="status" id="status"></div>
-
-    <details class="supported-list">
-      <summary>支援的轉換格式</summary>
-      <div id="supportedList" class="format-table"></div>
-    </details>
+  <!-- Tab 切換 -->
+  <div class="tabs">
+    <button class="tab active" data-tab="convert">格式轉換</button>
+    <button class="tab" data-tab="compress">圖片壓縮</button>
+    <button class="tab" data-tab="crop">圖片裁切</button>
   </div>
 
-  <script>
-    let selectedFile = null;
-    let selectedFormat = null;
-    let formatsData = {};
+  <!-- ===== 格式轉換 ===== -->
+  <div class="panel active" id="panel-convert">
+    <div class="drop-zone" id="dz-convert">
+      <div class="drop-icon">📁</div>
+      <p>拖曳或 <label class="btn-upload" for="fi-convert">選擇檔案</label></p>
+      <input type="file" id="fi-convert" hidden>
+      <p class="file-hint" id="hint-convert">尚未選擇</p>
+    </div>
+    <div class="format-section" id="fs-convert" style="display:none">
+      <label>輸出格式</label>
+      <div class="format-grid" id="fg-convert"></div>
+    </div>
+    <button class="btn-action" id="btn-convert" disabled>轉換</button>
+    <div class="status" id="st-convert"></div>
+  </div>
 
-    async function loadFormats() {
-      const res = await fetch('/formats');
-      const data = await res.json();
-      formatsData = data.supported;
-      renderSupportedList();
-    }
+  <!-- ===== 圖片壓縮 ===== -->
+  <div class="panel" id="panel-compress">
+    <div class="drop-zone" id="dz-compress">
+      <div class="drop-icon">🗜</div>
+      <p>拖曳或 <label class="btn-upload" for="fi-compress">選擇圖片</label></p>
+      <input type="file" id="fi-compress" accept="image/*" hidden>
+      <p class="file-hint" id="hint-compress">尚未選擇</p>
+    </div>
+    <div class="compress-controls" id="cc-compress" style="display:none">
+      <label>壓縮到原始大小的 <span id="pct-label">50</span>%</label>
+      <input type="range" id="pct-slider" min="5" max="90" value="50" step="5">
+      <div class="size-row">
+        <span>原始：<b id="orig-size">—</b></span>
+        <span>預計：<b id="est-size">—</b></span>
+      </div>
+    </div>
+    <button class="btn-action" id="btn-compress" disabled>壓縮</button>
+    <div class="status" id="st-compress"></div>
+    <div class="size-result" id="size-result" style="display:none">
+      原始 <b id="res-orig"></b> → 壓縮後 <b id="res-comp"></b>（節省 <b id="res-saved"></b>）
+    </div>
+  </div>
 
-    function renderSupportedList() {
-      const el = document.getElementById('supportedList');
-      let html = '<table><tr><th>輸入</th><th>可轉換為</th></tr>';
-      for (const [ext, targets] of Object.entries(formatsData)) {
-        html += `<tr><td><code>.${ext}</code></td><td>${targets.map(t => `<code>.${t}</code>`).join(', ')}</td></tr>`;
-      }
-      html += '</table>';
-      el.innerHTML = html;
-    }
+  <!-- ===== 圖片裁切 ===== -->
+  <div class="panel" id="panel-crop">
+    <div class="drop-zone" id="dz-crop">
+      <div class="drop-icon">✂️</div>
+      <p>拖曳或 <label class="btn-upload" for="fi-crop">選擇圖片</label></p>
+      <input type="file" id="fi-crop" accept="image/*" hidden>
+      <p class="file-hint" id="hint-crop">尚未選擇</p>
+    </div>
+    <div class="crop-controls" id="crop-ctrl" style="display:none">
+      <label>裁切模式</label>
+      <div class="mode-row">
+        <button class="mode-btn active" data-mode="ratio">比例裁切</button>
+        <button class="mode-btn" data-mode="custom">自訂像素</button>
+      </div>
 
-    function onFileSelected(file) {
-      selectedFile = file;
-      selectedFormat = null;
-      document.getElementById('fileHint').textContent = file.name;
-      document.getElementById('convertBtn').disabled = true;
+      <div id="ratio-panel">
+        <label>預設比例</label>
+        <div class="ratio-grid">
+          <button class="ratio-btn active" data-w="1" data-h="1">1:1</button>
+          <button class="ratio-btn" data-w="4" data-h="3">4:3</button>
+          <button class="ratio-btn" data-w="16" data-h="9">16:9</button>
+          <button class="ratio-btn" data-w="9" data-h="16">9:16</button>
+          <button class="ratio-btn" data-w="3" data-h="4">3:4</button>
+          <button class="ratio-btn" data-w="2" data-h="3">2:3</button>
+        </div>
+      </div>
 
-      const ext = file.name.split('.').pop().toLowerCase();
-      const targets = formatsData[ext] || [];
-      const section = document.getElementById('formatSection');
-      const grid = document.getElementById('formatGrid');
+      <div id="custom-panel" style="display:none">
+        <div class="px-row">
+          <div><label>X (px)</label><input type="number" id="crop-x" value="0" min="0"></div>
+          <div><label>Y (px)</label><input type="number" id="crop-y" value="0" min="0"></div>
+          <div><label>寬 (px)</label><input type="number" id="crop-w" value="500" min="1"></div>
+          <div><label>高 (px)</label><input type="number" id="crop-h" value="500" min="1"></div>
+        </div>
+      </div>
 
-      if (targets.length === 0) {
-        section.style.display = 'none';
-        setStatus('不支援此格式：' + ext, 'error');
-        return;
-      }
+      <label style="margin-top:12px">輸出格式</label>
+      <div class="format-grid" id="fg-crop">
+        <button class="format-btn active" data-fmt="jpg">jpg</button>
+        <button class="format-btn" data-fmt="png">png</button>
+        <button class="format-btn" data-fmt="webp">webp</button>
+      </div>
+    </div>
+    <button class="btn-action" id="btn-crop" disabled>裁切</button>
+    <div class="status" id="st-crop"></div>
+  </div>
 
-      setStatus('');
-      section.style.display = 'block';
-      grid.innerHTML = targets.map(t =>
-        `<button class="format-btn" data-fmt="${t}">.${t}</button>`
-      ).join('');
+  <!-- 支援格式 -->
+  <details class="supported-list">
+    <summary>支援的格式</summary>
+    <div id="supportedList"></div>
+  </details>
+</div>
 
-      grid.querySelectorAll('.format-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          grid.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          selectedFormat = btn.dataset.fmt;
-          document.getElementById('convertBtn').disabled = false;
-        });
-      });
-    }
+<script>
+let formatsData = {};
 
-    document.getElementById('fileInput').addEventListener('change', e => {
-      if (e.target.files[0]) onFileSelected(e.target.files[0]);
+// ── Tab 切換 ──────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ── 通用工具 ──────────────────────────────────────
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(2) + ' MB';
+}
+
+function setStatus(id, msg, type='') {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'status ' + type;
+}
+
+function setupDropZone(dzId, inputId, hintId, onFile) {
+  const dz = document.getElementById(dzId);
+  const fi = document.getElementById(inputId);
+  fi.addEventListener('change', e => { if (e.target.files[0]) onFile(e.target.files[0]); });
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]);
+  });
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── 格式轉換 ──────────────────────────────────────
+let convertFile = null, convertFmt = null;
+
+setupDropZone('dz-convert', 'fi-convert', 'hint-convert', file => {
+  convertFile = file; convertFmt = null;
+  document.getElementById('hint-convert').textContent = file.name;
+  document.getElementById('btn-convert').disabled = true;
+  setStatus('st-convert', '');
+
+  const ext = file.name.split('.').pop().toLowerCase();
+  const targets = formatsData[ext] || [];
+  const fs = document.getElementById('fs-convert');
+  const fg = document.getElementById('fg-convert');
+
+  if (!targets.length) { fs.style.display='none'; setStatus('st-convert','不支援此格式：'+ext,'error'); return; }
+  fs.style.display = 'block';
+  fg.innerHTML = targets.map(t => `<button class="format-btn" data-fmt="${t}">.${t}</button>`).join('');
+  fg.querySelectorAll('.format-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      fg.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      convertFmt = btn.dataset.fmt;
+      document.getElementById('btn-convert').disabled = false;
     });
+  });
+});
 
-    const dropZone = document.getElementById('dropZone');
-    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
-      e.preventDefault();
-      dropZone.classList.remove('drag-over');
-      if (e.dataTransfer.files[0]) onFileSelected(e.dataTransfer.files[0]);
-    });
+document.getElementById('btn-convert').addEventListener('click', async () => {
+  if (!convertFile || !convertFmt) return;
+  const btn = document.getElementById('btn-convert');
+  btn.disabled = true; btn.textContent = '轉換中...';
+  setStatus('st-convert', '處理中...', 'info');
+  const fd = new FormData();
+  fd.append('file', convertFile);
+  fd.append('output_format', convertFmt);
+  try {
+    const res = await fetch('/convert', {method:'POST', body:fd});
+    if (!res.ok) { const e=await res.json(); setStatus('st-convert','錯誤：'+e.error,'error'); return; }
+    const blob = await res.blob();
+    const base = convertFile.name.replace(/\.[^.]+$/, '');
+    triggerDownload(blob, `${base}.${convertFmt}`);
+    setStatus('st-convert', '完成，已下載！', 'success');
+  } catch(e) { setStatus('st-convert','連線錯誤','error'); }
+  finally { btn.disabled=false; btn.textContent='轉換'; }
+});
 
-    document.getElementById('convertBtn').addEventListener('click', async () => {
-      if (!selectedFile || !selectedFormat) return;
+// ── 圖片壓縮 ──────────────────────────────────────
+let compressFile = null;
 
-      const btn = document.getElementById('convertBtn');
-      btn.disabled = true;
-      btn.textContent = '轉換中...';
-      setStatus('處理中，請稍候...', 'info');
+setupDropZone('dz-compress', 'fi-compress', 'hint-compress', file => {
+  compressFile = file;
+  document.getElementById('hint-compress').textContent = `${file.name} (${fmtBytes(file.size)})`;
+  document.getElementById('btn-compress').disabled = false;
+  document.getElementById('cc-compress').style.display = 'block';
+  document.getElementById('size-result').style.display = 'none';
+  setStatus('st-compress', '');
+  document.getElementById('orig-size').textContent = fmtBytes(file.size);
+  updateEstSize();
+});
 
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('output_format', selectedFormat);
+function updateEstSize() {
+  if (!compressFile) return;
+  const pct = parseInt(document.getElementById('pct-slider').value);
+  document.getElementById('pct-label').textContent = pct;
+  document.getElementById('est-size').textContent = fmtBytes(Math.round(compressFile.size * pct / 100));
+}
 
-      try {
-        const res = await fetch('/convert', { method: 'POST', body: formData });
-        if (!res.ok) {
-          const err = await res.json();
-          setStatus('錯誤：' + err.error, 'error');
-          return;
-        }
+document.getElementById('pct-slider').addEventListener('input', updateEstSize);
 
-        const blob = await res.blob();
-        const disposition = res.headers.get('Content-Disposition') || '';
-        const match = disposition.match(/filename="?([^"]+)"?/);
-        const filename = match ? match[1] : `output.${selectedFormat}`;
+document.getElementById('btn-compress').addEventListener('click', async () => {
+  if (!compressFile) return;
+  const btn = document.getElementById('btn-compress');
+  btn.disabled = true; btn.textContent = '壓縮中...';
+  setStatus('st-compress', '處理中...', 'info');
+  const fd = new FormData();
+  fd.append('file', compressFile);
+  fd.append('target_pct', document.getElementById('pct-slider').value);
+  try {
+    const res = await fetch('/compress', {method:'POST', body:fd});
+    if (!res.ok) { const e=await res.json(); setStatus('st-compress','錯誤：'+e.error,'error'); return; }
+    const origSize = parseInt(res.headers.get('X-Original-Size') || compressFile.size);
+    const compSize = parseInt(res.headers.get('X-Compressed-Size') || 0);
+    const blob = await res.blob();
+    const base = compressFile.name.replace(/\.[^.]+$/, '');
+    const ext = compressFile.name.split('.').pop().toLowerCase();
+    const outExt = ['jpg','jpeg','webp'].includes(ext) ? ext : 'jpg';
+    triggerDownload(blob, `${base}_compressed.${outExt}`);
+    const saved = Math.round((1 - compSize/origSize)*100);
+    document.getElementById('res-orig').textContent = fmtBytes(origSize);
+    document.getElementById('res-comp').textContent = fmtBytes(compSize);
+    document.getElementById('res-saved').textContent = saved + '%';
+    document.getElementById('size-result').style.display = 'block';
+    setStatus('st-compress', '完成！', 'success');
+  } catch(e) { setStatus('st-compress','連線錯誤','error'); }
+  finally { btn.disabled=false; btn.textContent='壓縮'; }
+});
 
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-        setStatus('轉換完成，已開始下載！', 'success');
-      } catch (e) {
-        setStatus('連線錯誤：' + e.message, 'error');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = '轉換';
-      }
-    });
+// ── 圖片裁切 ──────────────────────────────────────
+let cropFile = null, cropMode = 'ratio', cropFmt = 'jpg';
+let cropRW = 1, cropRH = 1;
 
-    function setStatus(msg, type = '') {
-      const el = document.getElementById('status');
-      el.textContent = msg;
-      el.className = 'status ' + type;
-    }
+setupDropZone('dz-crop', 'fi-crop', 'hint-crop', file => {
+  cropFile = file;
+  document.getElementById('hint-crop').textContent = file.name;
+  document.getElementById('btn-crop').disabled = false;
+  document.getElementById('crop-ctrl').style.display = 'block';
+  setStatus('st-crop', '');
+});
 
-    loadFormats();
-  </script>
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    cropMode = btn.dataset.mode;
+    document.getElementById('ratio-panel').style.display = cropMode==='ratio' ? 'block' : 'none';
+    document.getElementById('custom-panel').style.display = cropMode==='custom' ? 'block' : 'none';
+  });
+});
+
+document.querySelectorAll('.ratio-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.ratio-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    cropRW = parseInt(btn.dataset.w); cropRH = parseInt(btn.dataset.h);
+  });
+});
+
+document.querySelectorAll('#fg-crop .format-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#fg-crop .format-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    cropFmt = btn.dataset.fmt;
+  });
+});
+
+document.getElementById('btn-crop').addEventListener('click', async () => {
+  if (!cropFile) return;
+  const btn = document.getElementById('btn-crop');
+  btn.disabled = true; btn.textContent = '裁切中...';
+  setStatus('st-crop', '處理中...', 'info');
+  const fd = new FormData();
+  fd.append('file', cropFile);
+  fd.append('output_format', cropFmt);
+  fd.append('mode', cropMode);
+  if (cropMode === 'ratio') {
+    fd.append('ratio_w', cropRW); fd.append('ratio_h', cropRH);
+  } else {
+    fd.append('x', document.getElementById('crop-x').value);
+    fd.append('y', document.getElementById('crop-y').value);
+    fd.append('width', document.getElementById('crop-w').value);
+    fd.append('height', document.getElementById('crop-h').value);
+  }
+  try {
+    const res = await fetch('/crop', {method:'POST', body:fd});
+    if (!res.ok) { const e=await res.json(); setStatus('st-crop','錯誤：'+e.error,'error'); return; }
+    const blob = await res.blob();
+    const base = cropFile.name.replace(/\.[^.]+$/, '');
+    triggerDownload(blob, `${base}_cropped.${cropFmt}`);
+    setStatus('st-crop', '完成！', 'success');
+  } catch(e) { setStatus('st-crop','連線錯誤','error'); }
+  finally { btn.disabled=false; btn.textContent='裁切'; }
+});
+
+// ── 載入格式 ──────────────────────────────────────
+async function loadFormats() {
+  const res = await fetch('/formats');
+  const data = await res.json();
+  formatsData = data.supported;
+  const el = document.getElementById('supportedList');
+  let html = '<table><tr><th>輸入</th><th>可轉換為</th></tr>';
+  for (const [ext, targets] of Object.entries(formatsData)) {
+    html += `<tr><td><code>.${ext}</code></td><td>${targets.map(t=>`<code>.${t}</code>`).join(' ')}</td></tr>`;
+  }
+  el.innerHTML = html + '</table>';
+}
+
+loadFormats();
+</script>
 </body>
 </html>

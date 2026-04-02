@@ -10,7 +10,7 @@ CONVERSIONS = {
     "md":   ["html", "pdf", "docx", "txt"],
     "html": ["md", "pdf", "docx", "txt"],
     "docx": ["html", "md", "pdf", "txt"],
-    "pdf":  ["txt"],
+    "pdf":  ["txt", "jpg", "png"],
     "txt":  ["html", "md"],
 }
 
@@ -46,6 +46,10 @@ def convert(file_bytes: bytes, input_ext: str, output_ext: str) -> bytes:
         if input_ext == "pdf" and output_ext == "txt":
             return _pdf_to_txt(file_bytes)
 
+        # PDF → 圖片：用 pdf2image
+        if input_ext == "pdf" and output_ext in ("jpg", "png"):
+            return _pdf_to_image(file_bytes, output_ext)
+
         # DOCX → PDF：優先 LibreOffice，fallback Pandoc
         if input_ext == "docx" and output_ext == "pdf":
             lo_cmd = _libreoffice_available()
@@ -78,6 +82,21 @@ def _pdf_to_txt(file_bytes: bytes) -> bytes:
         return text.encode("utf-8")
     except ImportError:
         raise RuntimeError("pypdf 未安裝，無法提取 PDF 文字")
+
+
+def _pdf_to_image(file_bytes: bytes, output_ext: str) -> bytes:
+    try:
+        from pdf2image import convert_from_bytes
+        import io
+        fmt = "JPEG" if output_ext == "jpg" else "PNG"
+        pages = convert_from_bytes(file_bytes, first_page=1, last_page=1, fmt=fmt, dpi=150)
+        if not pages:
+            raise RuntimeError("PDF 無法轉換為圖片")
+        out = io.BytesIO()
+        pages[0].save(out, format=fmt)
+        return out.getvalue()
+    except ImportError:
+        raise RuntimeError("pdf2image 未安裝")
 
 
 def _libreoffice_docx_to_pdf(lo_cmd: str, in_path: str, tmpdir: str) -> bytes:
