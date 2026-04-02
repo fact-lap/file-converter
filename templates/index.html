@@ -13,6 +13,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="convert">格式轉換</button>
     <button class="tab" data-tab="compress">圖片壓縮</button>
+    <button class="tab" data-tab="audio-compress">音頻壓縮</button>
     <button class="tab" data-tab="crop">圖片裁切</button>
   </div>
 
@@ -40,6 +41,10 @@
       <input type="file" id="fi-compress" accept="image/*" hidden>
       <p class="file-hint" id="hint-compress">尚未選擇</p>
     </div>
+    <!-- 預覽圖 -->
+    <div id="compress-preview-wrap" style="display:none;margin-bottom:14px;text-align:center">
+      <img id="compress-preview" style="max-width:100%;max-height:260px;border-radius:6px;border:1px solid #eee">
+    </div>
     <div class="compress-controls" id="cc-compress" style="display:none">
       <label>壓縮到原始大小的 <span id="pct-label">50</span>%</label>
       <input type="range" id="pct-slider" min="5" max="90" value="50" step="5">
@@ -55,9 +60,32 @@
     </div>
   </div>
 
+  <!-- ===== 音頻壓縮 ===== -->
+  <div class="panel" id="panel-audio-compress">
+    <div class="drop-zone" id="dz-acompress">
+      <div class="drop-icon">🎵</div>
+      <p>拖曳或 <label class="btn-upload" for="fi-acompress">選擇音頻</label></p>
+      <input type="file" id="fi-acompress" accept="audio/*" hidden>
+      <p class="file-hint" id="hint-acompress">尚未選擇</p>
+    </div>
+    <div class="compress-controls" id="cc-acompress" style="display:none">
+      <label>壓縮到原始大小的 <span id="apct-label">50</span>%</label>
+      <input type="range" id="apct-slider" min="10" max="90" value="50" step="5">
+      <div class="size-row">
+        <span>原始：<b id="aorig-size">—</b></span>
+        <span>預計：<b id="aest-size">—</b></span>
+      </div>
+      <p class="compress-note">WAV / FLAC 等無損格式將自動轉為 MP3 輸出</p>
+    </div>
+    <button class="btn-action" id="btn-acompress" disabled>壓縮</button>
+    <div class="status" id="st-acompress"></div>
+    <div class="size-result" id="asize-result" style="display:none">
+      原始 <b id="ares-orig"></b> → 壓縮後 <b id="ares-comp"></b>（節省 <b id="ares-saved"></b>）
+    </div>
+  </div>
+
   <!-- ===== 圖片裁切 ===== -->
   <div class="panel" id="panel-crop">
-    <!-- 上傳區（未選圖時顯示） -->
     <div class="drop-zone" id="dz-crop">
       <div class="drop-icon">✂️</div>
       <p>拖曳或 <label class="btn-upload" for="fi-crop">選擇圖片</label></p>
@@ -65,14 +93,19 @@
       <p class="file-hint" id="hint-crop">尚未選擇</p>
     </div>
 
-    <!-- 選圖後顯示 -->
     <div id="crop-workspace" style="display:none">
-
-      <!-- 模式 + 比例選項 -->
+      <!-- 模式 + 比例 + 縮放 -->
       <div class="crop-toolbar">
-        <div class="mode-row">
-          <button class="mode-btn active" data-mode="ratio">比例</button>
-          <button class="mode-btn" data-mode="free">自由</button>
+        <div class="toolbar-row">
+          <div class="mode-row">
+            <button class="mode-btn active" data-mode="ratio">比例</button>
+            <button class="mode-btn" data-mode="free">自由</button>
+          </div>
+          <div class="zoom-row">
+            <button class="zoom-btn" id="zoom-out">－</button>
+            <span id="zoom-label">1×</span>
+            <button class="zoom-btn" id="zoom-in">＋</button>
+          </div>
         </div>
         <div id="ratio-btns" class="ratio-grid">
           <button class="ratio-btn active" data-w="1" data-h="1">1:1</button>
@@ -84,20 +117,17 @@
         </div>
       </div>
 
-      <!-- 預覽圖 + 拖拉選框 -->
-      <div class="crop-preview-wrap">
+      <!-- 可滾動的預覽容器 -->
+      <div class="crop-scroll-wrap" id="crop-scroll-wrap">
         <div class="crop-img-wrap" id="crop-img-wrap">
           <img id="crop-img" draggable="false" alt="">
           <div class="crop-overlay" id="crop-overlay">
-            <!-- 暗色遮罩四塊 -->
             <div class="crop-shade" id="shade-top"></div>
             <div class="crop-shade" id="shade-left"></div>
             <div class="crop-shade" id="shade-right"></div>
             <div class="crop-shade" id="shade-bottom"></div>
-            <!-- 選框 -->
             <div class="crop-sel" id="crop-sel">
               <div class="crop-sel-info" id="crop-sel-info">—</div>
-              <!-- 角點把手 -->
               <div class="handle tl"></div>
               <div class="handle tr"></div>
               <div class="handle bl"></div>
@@ -107,12 +137,8 @@
         </div>
       </div>
 
-      <!-- 座標顯示 + 重選 -->
-      <div class="crop-coords" id="crop-coords">
-        在圖片上拖拉選取裁切範圍
-      </div>
+      <div class="crop-coords" id="crop-coords">在圖片上拖拉選取裁切範圍</div>
 
-      <!-- 輸出格式 -->
       <div style="margin-top:12px">
         <label class="ctrl-label">輸出格式</label>
         <div class="format-grid" id="fg-crop">
@@ -121,8 +147,6 @@
           <button class="format-btn" data-fmt="webp">webp</button>
         </div>
       </div>
-
-      <!-- 換圖按鈕 -->
       <div style="margin-top:10px">
         <label class="btn-upload-sm" for="fi-crop-change">換圖</label>
         <input type="file" id="fi-crop-change" accept="image/*" hidden>
@@ -226,6 +250,13 @@ setupDropZone('dz-compress', 'fi-compress', file => {
   setStatus('st-compress','');
   document.getElementById('orig-size').textContent = fmtBytes(file.size);
   updateEstSize();
+  // 顯示預覽圖
+  const prevWrap = document.getElementById('compress-preview-wrap');
+  const prevImg  = document.getElementById('compress-preview');
+  const oldUrl = prevImg.src;
+  if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
+  prevImg.src = URL.createObjectURL(file);
+  prevWrap.style.display = 'block';
 });
 function updateEstSize() {
   if (!compressFile) return;
@@ -256,18 +287,58 @@ document.getElementById('btn-compress').addEventListener('click', async () => {
   finally { btn.disabled=false; btn.textContent='壓縮'; }
 });
 
-// ── 圖片裁切（互動預覽）────────────────────────────
+// ── 音頻壓縮 ──────────────────────────────────────
+let acompressFile = null;
+setupDropZone('dz-acompress', 'fi-acompress', file => {
+  acompressFile = file;
+  document.getElementById('hint-acompress').textContent = `${file.name} (${fmtBytes(file.size)})`;
+  document.getElementById('btn-acompress').disabled = false;
+  document.getElementById('cc-acompress').style.display = 'block';
+  document.getElementById('asize-result').style.display = 'none';
+  setStatus('st-acompress','');
+  document.getElementById('aorig-size').textContent = fmtBytes(file.size);
+  updateAEstSize();
+});
+function updateAEstSize() {
+  if (!acompressFile) return;
+  const pct = parseInt(document.getElementById('apct-slider').value);
+  document.getElementById('apct-label').textContent = pct;
+  document.getElementById('aest-size').textContent = fmtBytes(Math.round(acompressFile.size*pct/100));
+}
+document.getElementById('apct-slider').addEventListener('input', updateAEstSize);
+document.getElementById('btn-acompress').addEventListener('click', async () => {
+  if (!acompressFile) return;
+  const btn = document.getElementById('btn-acompress');
+  btn.disabled=true; btn.textContent='壓縮中...'; setStatus('st-acompress','處理中...','info');
+  const fd = new FormData(); fd.append('file',acompressFile); fd.append('target_pct',document.getElementById('apct-slider').value);
+  try {
+    const res = await fetch('/compress-audio',{method:'POST',body:fd});
+    if (!res.ok) { const e=await res.json(); setStatus('st-acompress','錯誤：'+e.error,'error'); return; }
+    const origSize = parseInt(res.headers.get('X-Original-Size')||acompressFile.size);
+    const compSize = parseInt(res.headers.get('X-Compressed-Size')||0);
+    const ext = acompressFile.name.split('.').pop().toLowerCase();
+    const outExt = ['mp3','aac','ogg','m4a','opus'].includes(ext)?ext:'mp3';
+    triggerDownload(await res.blob(), acompressFile.name.replace(/\.[^.]+$/,'')+'_compressed.'+outExt);
+    document.getElementById('ares-orig').textContent = fmtBytes(origSize);
+    document.getElementById('ares-comp').textContent = fmtBytes(compSize);
+    document.getElementById('ares-saved').textContent = Math.round((1-compSize/origSize)*100)+'%';
+    document.getElementById('asize-result').style.display = 'block';
+    setStatus('st-acompress','完成！','success');
+  } catch(e) { setStatus('st-acompress','連線錯誤','error'); }
+  finally { btn.disabled=false; btn.textContent='壓縮'; }
+});
+
+// ── 圖片裁切（互動預覽 + 縮放）──────────────────────
 let cropFile = null, cropFmt = 'jpg';
 let cropMode = 'ratio', cropRW = 1, cropRH = 1;
-// 選框（相對於顯示圖的像素）
 let sel = {x:0, y:0, w:0, h:0, valid:false};
 let dragging = false, dragStart = {x:0, y:0};
-let dragMode = 'draw'; // 'draw' | 'move'
+let dragMode = 'draw';
 let moveOffset = {x:0, y:0};
 
-function isInSel(p) {
-  return sel.valid && p.x >= sel.x && p.x <= sel.x+sel.w && p.y >= sel.y && p.y <= sel.y+sel.h;
-}
+// 縮放
+const ZOOM_STEPS = [1, 1.5, 2, 3];
+let zoomIdx = 0;
 
 const cropImg    = document.getElementById('crop-img');
 const cropOverlay= document.getElementById('crop-overlay');
@@ -279,19 +350,49 @@ const shadeLeft  = document.getElementById('shade-left');
 const shadeRight = document.getElementById('shade-right');
 const shadeBottom= document.getElementById('shade-bottom');
 
+function applyZoom(newIdx) {
+  const oldW = cropImg.offsetWidth;
+  const oldH = cropImg.offsetHeight;
+  zoomIdx = Math.max(0, Math.min(newIdx, ZOOM_STEPS.length - 1));
+  const z = ZOOM_STEPS[zoomIdx];
+  cropImg.style.maxHeight = (420 * z) + 'px';
+  cropImg.style.maxWidth  = '100%';
+  document.getElementById('zoom-label').textContent = z + '×';
+  document.getElementById('zoom-out').disabled = zoomIdx === 0;
+  document.getElementById('zoom-in').disabled  = zoomIdx === ZOOM_STEPS.length - 1;
+  requestAnimationFrame(() => {
+    if (sel.valid && oldW > 0) {
+      const sx = cropImg.offsetWidth  / oldW;
+      const sy = cropImg.offsetHeight / oldH;
+      sel.x *= sx; sel.y *= sy; sel.w *= sx; sel.h *= sy;
+    }
+    renderSel(); updateShades();
+  });
+}
+
+document.getElementById('zoom-in').addEventListener('click',  () => applyZoom(zoomIdx + 1));
+document.getElementById('zoom-out').addEventListener('click', () => applyZoom(zoomIdx - 1));
+
+function isInSel(p) {
+  return sel.valid && p.x >= sel.x && p.x <= sel.x+sel.w && p.y >= sel.y && p.y <= sel.y+sel.h;
+}
+
 function loadCropFile(file) {
   cropFile = file;
   sel = {x:0, y:0, w:0, h:0, valid:false};
+  zoomIdx = 0;
   document.getElementById('dz-crop').style.display = 'none';
   document.getElementById('crop-workspace').style.display = 'block';
   document.getElementById('btn-crop').disabled = true;
   setStatus('st-crop','');
   cropCoords.textContent = '在圖片上拖拉選取裁切範圍';
+  cropImg.style.maxHeight = '420px';
+  cropImg.style.maxWidth  = '100%';
+  document.getElementById('zoom-label').textContent = '1×';
+  document.getElementById('zoom-in').disabled  = false;
+  document.getElementById('zoom-out').disabled = true;
   const url = URL.createObjectURL(file);
-  cropImg.onload = () => {
-    URL.revokeObjectURL(url);
-    updateShades();
-  };
+  cropImg.onload = () => { URL.revokeObjectURL(url); updateShades(); };
   cropImg.src = url;
 }
 
@@ -300,7 +401,6 @@ document.getElementById('fi-crop-change').addEventListener('change', e => {
   if (e.target.files[0]) loadCropFile(e.target.files[0]);
 });
 
-// 模式切換
 document.querySelectorAll('.mode-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
@@ -313,13 +413,11 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
   });
 });
 
-// 比例按鈕
 document.querySelectorAll('.ratio-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.ratio-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     cropRW = parseInt(btn.dataset.w); cropRH = parseInt(btn.dataset.h);
-    // 重設選框為中心裁切
     if (cropImg.naturalWidth) applyCenterRatio();
   });
 });
@@ -335,7 +433,6 @@ function applyCenterRatio() {
   document.getElementById('btn-crop').disabled = false;
 }
 
-// 座標換算（顯示 → 原圖）
 function toReal(v, axis) {
   const scale = axis==='x'
     ? cropImg.naturalWidth  / cropImg.offsetWidth
@@ -367,7 +464,6 @@ function startDrag(e) {
 }
 
 function moveDrag(e) {
-  // 更新 cursor（非拖拉中）
   if (!dragging) {
     const p = getPointerPos(e);
     cropOverlay.style.cursor = isInSel(p) ? 'move' : 'crosshair';
@@ -380,35 +476,29 @@ function moveDrag(e) {
   if (dragMode === 'move') {
     sel.x = Math.max(0, Math.min(p.x - moveOffset.x, dw - sel.w));
     sel.y = Math.max(0, Math.min(p.y - moveOffset.y, dh - sel.h));
-    renderSel(); updateCoords();
-    return;
+    renderSel(); updateCoords(); return;
   }
 
-  // draw mode
   let dx = p.x - dragStart.x;
   let dy = p.y - dragStart.y;
-
   if (cropMode === 'ratio') {
     const ratio = cropRW / cropRH;
     const absDx = Math.abs(dx), absDy = Math.abs(dy);
     if (absDx / ratio > absDy) { dy = (absDx/ratio) * Math.sign(dy || 1); }
     else { dx = absDy * ratio * Math.sign(dx || 1); }
   }
-
   sel.x = dx >= 0 ? dragStart.x : Math.max(0, dragStart.x + dx);
   sel.y = dy >= 0 ? dragStart.y : Math.max(0, dragStart.y + dy);
   sel.w = Math.min(Math.abs(dx), dw - sel.x);
   sel.h = Math.min(Math.abs(dy), dh - sel.y);
-
   if (sel.w > 2 && sel.h > 2) { sel.valid = true; renderSel(); updateCoords(); }
 }
 
 function endDrag() {
   if (!dragging) return;
   dragging = false;
-  if (sel.valid && sel.w > 5 && sel.h > 5) {
+  if (sel.valid && sel.w > 5 && sel.h > 5)
     document.getElementById('btn-crop').disabled = false;
-  }
 }
 
 cropOverlay.addEventListener('mousedown',  startDrag);
@@ -426,19 +516,15 @@ function renderSel() {
   cropSelEl.style.top    = sel.y + 'px';
   cropSelEl.style.width  = sel.w + 'px';
   cropSelEl.style.height = sel.h + 'px';
-  const rx = toReal(sel.w,'x'), ry = toReal(sel.h,'y');
-  cropInfo.textContent = `${rx} × ${ry}`;
+  cropInfo.textContent = `${toReal(sel.w,'x')} × ${toReal(sel.h,'y')}`;
   updateShades();
 }
 
 function updateShades() {
   const dw = cropImg.offsetWidth || 0, dh = cropImg.offsetHeight || 0;
   if (!sel.valid || !dw) {
-    [shadeTop,shadeLeft,shadeRight,shadeBottom].forEach(s => {
-      s.style.display = 'none';
-    });
-    cropSelEl.style.display = 'none';
-    return;
+    [shadeTop,shadeLeft,shadeRight,shadeBottom].forEach(s => s.style.display='none');
+    cropSelEl.style.display = 'none'; return;
   }
   const {x,y,w,h} = sel;
   shadeTop.style.cssText    = `display:block;top:0;left:0;width:${dw}px;height:${y}px`;
@@ -449,12 +535,9 @@ function updateShades() {
 
 function updateCoords() {
   if (!sel.valid) return;
-  const rx = toReal(sel.x,'x'), ry = toReal(sel.y,'y');
-  const rw = toReal(sel.w,'x'), rh = toReal(sel.h,'y');
-  cropCoords.textContent = `X: ${rx}  Y: ${ry}  |  ${rw} × ${rh} px`;
+  cropCoords.textContent = `X: ${toReal(sel.x,'x')}  Y: ${toReal(sel.y,'y')}  |  ${toReal(sel.w,'x')} × ${toReal(sel.h,'y')} px`;
 }
 
-// 輸出格式
 document.querySelectorAll('#fg-crop .format-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('#fg-crop .format-btn').forEach(b=>b.classList.remove('active'));
@@ -462,21 +545,14 @@ document.querySelectorAll('#fg-crop .format-btn').forEach(btn => {
   });
 });
 
-// 裁切提交
 document.getElementById('btn-crop').addEventListener('click', async () => {
   if (!cropFile || !sel.valid) return;
   const btn = document.getElementById('btn-crop');
   btn.disabled=true; btn.textContent='裁切中...'; setStatus('st-crop','處理中...','info');
-
   const fd = new FormData();
-  fd.append('file', cropFile);
-  fd.append('output_format', cropFmt);
-  fd.append('mode', 'custom');
-  fd.append('x',      toReal(sel.x,'x'));
-  fd.append('y',      toReal(sel.y,'y'));
-  fd.append('width',  toReal(sel.w,'x'));
-  fd.append('height', toReal(sel.h,'y'));
-
+  fd.append('file', cropFile); fd.append('output_format', cropFmt); fd.append('mode','custom');
+  fd.append('x', toReal(sel.x,'x')); fd.append('y', toReal(sel.y,'y'));
+  fd.append('width', toReal(sel.w,'x')); fd.append('height', toReal(sel.h,'y'));
   try {
     const res = await fetch('/crop',{method:'POST',body:fd});
     if (!res.ok) { const e=await res.json(); setStatus('st-crop','錯誤：'+e.error,'error'); return; }
@@ -486,7 +562,6 @@ document.getElementById('btn-crop').addEventListener('click', async () => {
   finally { btn.disabled=false; btn.textContent='裁切並下載'; }
 });
 
-// 當圖片載入完後，如果是比例模式自動套用中心比例
 cropImg.addEventListener('load', () => {
   if (cropMode === 'ratio') applyCenterRatio();
 });

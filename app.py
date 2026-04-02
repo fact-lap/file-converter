@@ -141,6 +141,38 @@ def compress():
     })
 
 
+@app.route("/compress-audio", methods=["POST"])
+def compress_audio():
+    if "file" not in request.files:
+        return jsonify({"error": "沒有上傳檔案"}), 400
+    file = request.files["file"]
+    target_pct = int(request.form.get("target_pct", 50))
+
+    filename = secure_filename(file.filename)
+    input_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
+
+    if input_ext not in audio_converter.SUPPORTED_INPUTS:
+        return jsonify({"error": "不支援的音頻格式"}), 400
+
+    file_bytes = file.read()
+    target_ratio = max(0.05, min(0.95, target_pct / 100))
+
+    try:
+        result, orig_size, compressed_size = audio_converter.compress(
+            file_bytes, input_ext, target_ratio
+        )
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+
+    out_ext = input_ext if input_ext in ("mp3", "aac", "ogg", "m4a", "opus") else "mp3"
+    return _send(result, out_ext, f"{base_name}_compressed", {
+        "X-Original-Size": str(orig_size),
+        "X-Compressed-Size": str(compressed_size),
+        "Access-Control-Expose-Headers": "X-Original-Size, X-Compressed-Size",
+    })
+
+
 @app.route("/crop", methods=["POST"])
 def crop():
     if "file" not in request.files:
