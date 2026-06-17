@@ -6,7 +6,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libheif1 \
     poppler-utils \
     ffmpeg \
+    musescore3 \
     && rm -rf /var/lib/apt/lists/*
+
+ENV QT_QPA_PLATFORM=offscreen
 
 WORKDIR /app
 

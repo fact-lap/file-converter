@@ -6,6 +6,7 @@ import io
 from converters import image as img_converter
 from converters import document as doc_converter
 from converters import audio as audio_converter
+from converters import notation as notation_converter
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
@@ -32,6 +33,12 @@ MIME_TYPES = {
     "ogg": "audio/ogg",
     "m4a": "audio/mp4",
     "opus": "audio/opus",
+    "mid": "audio/midi",
+    "midi": "audio/midi",
+    "musicxml": "application/vnd.recordare.musicxml+xml",
+    "xml": "application/xml",
+    "mxl": "application/vnd.recordare.musicxml",
+    "mscz": "application/vnd.musescore",
 }
 
 
@@ -43,7 +50,11 @@ def get_supported_formats():
     for ext, targets in doc_converter.CONVERSIONS.items():
         result[ext] = targets
     for ext in audio_converter.SUPPORTED_INPUTS:
-        result[ext] = [f for f in audio_converter.CONVERTIBLE_TO if f != ext]
+        targets = [f for f in audio_converter.CONVERTIBLE_TO if f != ext]
+        targets += [f for f in notation_converter.CONVERSIONS.get(ext, []) if f not in targets]
+        result[ext] = targets
+    for ext in notation_converter.NOTATION_INPUTS:
+        result[ext] = notation_converter.CONVERSIONS.get(ext, [])
     return result
 
 
@@ -78,6 +89,8 @@ def convert():
     file = request.files["file"]
     output_format = request.form.get("output_format", "").lower().strip(".")
     quality = int(request.form.get("quality", 85))
+    transcription_mode = request.form.get("transcription_mode", "direct").lower()
+    stem = request.form.get("stem", "vocals").lower()
 
     if not file.filename or not output_format:
         return jsonify({"error": "缺少必要參數"}), 400
@@ -92,10 +105,23 @@ def convert():
             if output_format not in img_converter.OUTPUT_FORMATS:
                 return jsonify({"error": f"不支援圖片輸出格式 {output_format}"}), 400
             result = img_converter.convert(file_bytes, input_ext, output_format, quality)
+        elif notation_converter.is_audio_transcription(input_ext, output_format):
+            result = notation_converter.convert(
+                file_bytes,
+                input_ext,
+                output_format,
+                transcription_mode=transcription_mode,
+                stem=stem,
+            )
         elif input_ext in audio_converter.SUPPORTED_INPUTS:
             if output_format not in audio_converter.CONVERTIBLE_TO:
                 return jsonify({"error": f"不支援音檔輸出格式 {output_format}"}), 400
             result = audio_converter.convert(file_bytes, input_ext, output_format)
+        elif input_ext in notation_converter.NOTATION_INPUTS:
+            allowed = notation_converter.CONVERSIONS.get(input_ext, [])
+            if output_format not in allowed:
+                return jsonify({"error": f"不支援 {input_ext} → {output_format}"}), 400
+            result = notation_converter.convert(file_bytes, input_ext, output_format)
         elif input_ext in doc_converter.SUPPORTED_INPUTS:
             allowed = doc_converter.CONVERSIONS.get(input_ext, [])
             if output_format not in allowed:
@@ -106,7 +132,11 @@ def convert():
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
 
-    return _send(result, output_format, base_name)
+    return _send(
+        result,
+        notation_converter.output_filename_ext(output_format),
+        base_name,
+    )
 
 
 @app.route("/compress", methods=["POST"])

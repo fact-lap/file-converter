@@ -53,6 +53,10 @@ h1 { font-size:1.8rem; margin-bottom:20px; }
 /* Compress note */
 .compress-note { font-size:.8rem; color:#999; margin-top:8px; }
 
+.transcription-options { margin:0 0 16px; padding:12px 0; border-top:1px solid #eee; border-bottom:1px solid #eee; }
+.transcription-options .mode-row { margin-bottom:10px; }
+.tx-stems { margin-top:8px; }
+
 /* Crop toolbar */
 .crop-toolbar { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
 .toolbar-row { display:flex; justify-content:space-between; align-items:center; }

@@ -29,6 +29,18 @@
       <label>輸出格式</label>
       <div class="format-grid" id="fg-convert"></div>
     </div>
+    <div class="transcription-options" id="tx-options" style="display:none">
+      <label class="ctrl-label">採譜模式</label>
+      <div class="mode-row">
+        <button class="mode-btn tx-mode active" data-mode="direct">直接採譜</button>
+        <button class="mode-btn tx-mode" data-mode="demucs">先拆 stem</button>
+      </div>
+      <div class="format-grid tx-stems" id="tx-stems" style="display:none">
+        <button class="format-btn active" data-stem="vocals">vocals</button>
+        <button class="format-btn" data-stem="instrumental">instrumental</button>
+      </div>
+      <p class="compress-note">Audio → MIDI / MusicXML / PDF 屬 AI 草稿採譜，適合先出初稿再人手執譜。</p>
+    </div>
     <button class="btn-action" id="btn-convert" disabled>轉換</button>
     <div class="status" id="st-convert"></div>
   </div>
@@ -204,11 +216,37 @@ function triggerDownload(blob, filename) {
 }
 
 // ── 格式轉換 ──────────────────────────────────────
-let convertFile = null, convertFmt = null;
+let convertFile = null, convertFmt = null, transcriptionMode = 'direct', transcriptionStem = 'vocals';
+const audioExts = new Set(['mp3','wav','flac','aac','ogg','m4a','opus','wma']);
+const transcriptionTargets = new Set(['mid','midi','musicxml','pdf']);
+
+function updateTranscriptionOptions() {
+  const ext = convertFile ? convertFile.name.split('.').pop().toLowerCase() : '';
+  const show = audioExts.has(ext) && transcriptionTargets.has(convertFmt || '');
+  document.getElementById('tx-options').style.display = show ? 'block' : 'none';
+}
+
+document.querySelectorAll('.tx-mode').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tx-mode').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    transcriptionMode = btn.dataset.mode;
+    document.getElementById('tx-stems').style.display = transcriptionMode === 'demucs' ? 'flex' : 'none';
+  });
+});
+document.querySelectorAll('#tx-stems .format-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#tx-stems .format-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    transcriptionStem = btn.dataset.stem;
+  });
+});
+
 setupDropZone('dz-convert', 'fi-convert', file => {
   convertFile = file; convertFmt = null;
   document.getElementById('hint-convert').textContent = file.name;
   document.getElementById('btn-convert').disabled = true;
+  document.getElementById('tx-options').style.display = 'none';
   setStatus('st-convert', '');
   const ext = file.name.split('.').pop().toLowerCase();
   const targets = formatsData[ext] || [];
@@ -221,6 +259,7 @@ setupDropZone('dz-convert', 'fi-convert', file => {
     btn.addEventListener('click', () => {
       fg.querySelectorAll('.format-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active'); convertFmt = btn.dataset.fmt;
+      updateTranscriptionOptions();
       document.getElementById('btn-convert').disabled = false;
     });
   });
@@ -230,6 +269,8 @@ document.getElementById('btn-convert').addEventListener('click', async () => {
   const btn = document.getElementById('btn-convert');
   btn.disabled=true; btn.textContent='轉換中...'; setStatus('st-convert','處理中...','info');
   const fd = new FormData(); fd.append('file',convertFile); fd.append('output_format',convertFmt);
+  fd.append('transcription_mode', transcriptionMode);
+  fd.append('stem', transcriptionStem);
   try {
     const res = await fetch('/convert',{method:'POST',body:fd});
     if (!res.ok) { const e=await res.json(); setStatus('st-convert','錯誤：'+e.error,'error'); return; }
