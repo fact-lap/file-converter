@@ -1,4 +1,9 @@
 import os
+import re
+import json
+import datetime
+import urllib.parse
+import urllib.request
 from flask import Flask, request, jsonify, send_file, render_template, Response
 from werkzeug.utils import secure_filename
 import io
@@ -263,6 +268,176 @@ def crop():
         return jsonify({"error": str(e)}), 500
 
     return _send(result, output_format, f"{base_name}_cropped")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# YouTube lane — UI front door for the Mac/HF Space/Drive pipeline.
+#
+# Architecture:
+#   This Flask app runs on HF Space.  It MUST NOT download from YouTube
+#   (HF datacenter IPs are bot-walled).  Instead, on UI submit it creates a
+#   Notion task; the Mac residential-IP poller (poll-youtube.mjs) picks it up,
+#   runs ystem.sh, and writes status/stems back to the same task page.
+#   This endpoint is the UI ⇄ Notion bridge for: create + poll status + list stems.
+# ─────────────────────────────────────────────────────────────────────────────
+
+NOTION_INTAKE_TOKEN = os.environ.get("NOTION_INTAKE_TOKEN", "")
+INTAKE_TASKS_DB_ID = os.environ.get("INTAKE_TASKS_DB_ID", "")
+NOTION_API = "https://api.notion.com/v1"
+NOTION_VERSION = "2022-06-28"
+
+YT_URL_RE = re.compile(
+    r"^https?://(?:(?:www|m)\.)?(?:youtube\.com/(?:watch\?[^\s]*v=[\w-]+|shorts/[\w-]+|live/[\w-]+)|youtu\.be/[\w-]+)\S*$"
+)
+STATUS_LINE_RE = re.compile(r"^📊\s*status:\s*([a-z_]+)(?:\s*\|\s*(.+))?(?:\s*@\s*\S+)?", re.IGNORECASE)
+STEM_LINE_RE = re.compile(r"^🎵\s*(\S+(?:\s*\S+)*?)(?:\s*\|\s*in:\s*(.+))?$")
+DEST_LINE_RE = re.compile(r"^🎧\s*stems\s*→\s*(.+)$")
+
+
+def _notion(method, path, body=None):
+    if not NOTION_INTAKE_TOKEN:
+        raise RuntimeError("NOTION_INTAKE_TOKEN not set on HF Space")
+    req = urllib.request.Request(
+        NOTION_API + path,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {NOTION_INTAKE_TOKEN}",
+            "Notion-Version": NOTION_VERSION,
+            "Content-Type": "application/json"
+        }
+    )
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    with urllib.request.urlopen(req, data=data, timeout=20) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _fetch_youtube_title(url: str) -> str:
+    """oEmbed gives the video title without hitting the bot-walled download path."""
+    try:
+        oembed = "https://www.youtube.com/oembed?" + urllib.parse.urlencode({"url": url, "format": "json"})
+        with urllib.request.urlopen(oembed, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        title = (data.get("title") or "").strip()
+        return title or url
+    except Exception:
+        return url
+
+
+def _block_text(block: dict) -> str:
+    if block.get("type") != "paragraph":
+        return ""
+    return "".join(t.get("plain_text", "") for t in block.get("paragraph", {}).get("rich_text", []))
+
+
+@app.route("/youtube-intake", methods=["POST"])
+def youtube_intake():
+    if not NOTION_INTAKE_TOKEN or not INTAKE_TASKS_DB_ID:
+        return jsonify({
+            "error": "Server not configured: NOTION_INTAKE_TOKEN / INTAKE_TASKS_DB_ID missing on HF Space"
+        }), 500
+
+    payload = request.get_json(silent=True) or request.form
+    url = (payload.get("url") or "").strip()
+    mode = (payload.get("mode") or "two").strip().lower()
+    if mode not in ("two", "four"):
+        mode = "two"
+    if not YT_URL_RE.match(url):
+        return jsonify({"error": "請貼 YouTube URL（youtube.com / youtu.be / shorts / live）"}), 400
+
+    title = _fetch_youtube_title(url)
+    ts = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    page_body = {
+        "parent": {"database_id": INTAKE_TASKS_DB_ID},
+        "properties": {
+            "煩瑣": {"title": [{"text": {"content": title[:200]}}]},
+            "狀態": {"status": {"name": "⏭️ 下一步要做"}}
+        },
+        "children": [
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {"rich_text": [{"type": "text", "text": {"content": f"🎬 YT｜{url}｜mode:{mode}"}}]}
+            },
+            {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {"rich_text": [{"type": "text", "text": {"content": f"📊 status: queued @ {ts}"}}]}
+            }
+        ]
+    }
+
+    try:
+        page = _notion("POST", "/pages", page_body)
+    except urllib.error.HTTPError as e:
+        return jsonify({"error": f"Notion {e.code}: {e.read().decode('utf-8')[:300]}"}), 502
+    except Exception as e:
+        return jsonify({"error": f"Notion intake failed: {e}"}), 502
+
+    return jsonify({
+        "task_id": page["id"],
+        "task_url": page.get("url"),
+        "video_title": title,
+        "mode": mode
+    })
+
+
+@app.route("/job-status", methods=["GET"])
+def job_status():
+    """UI polls this — returns latest 📊 status line + (when done) stems list."""
+    if not NOTION_INTAKE_TOKEN:
+        return jsonify({"error": "Server not configured"}), 500
+    task_id = (request.args.get("task") or "").strip()
+    if not task_id:
+        return jsonify({"error": "missing task"}), 400
+
+    try:
+        page = _notion("GET", f"/pages/{task_id}")
+        blocks = _notion("GET", f"/blocks/{task_id}/children?page_size=100")
+    except urllib.error.HTTPError as e:
+        return jsonify({"error": f"Notion {e.code}"}), 502
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+    last_state = "queued"
+    last_status_text = ""
+    stems = []
+    drive_dest = ""
+    for block in blocks.get("results", []):
+        text = _block_text(block).strip()
+        if not text:
+            continue
+        m = STATUS_LINE_RE.match(text)
+        if m:
+            last_state = m.group(1).lower()
+            last_status_text = text
+            continue
+        m = STEM_LINE_RE.match(text)
+        if m:
+            stems.append({"name": m.group(1).strip(), "location": (m.group(2) or "").strip()})
+            continue
+        m = DEST_LINE_RE.match(text)
+        if m:
+            drive_dest = m.group(1).strip()
+
+    # Tasks DB title property
+    title_prop = page.get("properties", {}).get("煩瑣") or page.get("properties", {}).get("Name") or {}
+    video_title = "".join(t.get("plain_text", "") for t in title_prop.get("title", []))
+
+    done_flag = page.get("properties", {}).get("搞掂", {}).get("checkbox", False)
+    if done_flag and last_state != "done":
+        last_state = "done"
+
+    return jsonify({
+        "task_id": task_id,
+        "task_url": page.get("url"),
+        "video_title": video_title,
+        "state": last_state,
+        "status_text": last_status_text,
+        "stems": stems,
+        "drive_dest": drive_dest,
+        "done": done_flag
+    })
 
 
 if __name__ == "__main__":

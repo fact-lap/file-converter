@@ -15,6 +15,7 @@
     <button class="tab" data-tab="compress">圖片壓縮</button>
     <button class="tab" data-tab="audio-compress">音頻壓縮</button>
     <button class="tab" data-tab="stem">Stem Split</button>
+    <button class="tab" data-tab="youtube">▶️ YouTube</button>
     <button class="tab" data-tab="crop">圖片裁切</button>
   </div>
 
@@ -125,6 +126,60 @@
     </div>
     <button class="btn-action" id="btn-stem" disabled>拆軌並下載</button>
     <div class="status" id="st-stem"></div>
+  </div>
+
+  <!-- ===== YouTube lane ===== -->
+  <div class="panel" id="panel-youtube">
+    <p class="compress-note">
+      貼 YouTube URL → Mac 用 residential IP download → HF Space 拆軌 → Drive 備份。<br>
+      落單後 UI 會即時顯示進度，跑完即場睇／下載 stems。
+    </p>
+    <div style="margin-bottom:14px">
+      <label class="ctrl-label" for="yt-url-input">YouTube URL</label>
+      <input type="url" id="yt-url-input" placeholder="https://www.youtube.com/watch?v=…"
+             class="select-control" style="width:100%;padding:10px;font-size:14px"
+             autocomplete="off">
+    </div>
+    <div style="margin-bottom:14px">
+      <label class="ctrl-label">拆軌模式</label>
+      <div class="format-grid" id="fg-yt">
+        <button class="format-btn active" data-mode="two">vocals + instrumental</button>
+        <button class="format-btn" data-mode="four">vocals + drums + bass + other</button>
+      </div>
+    </div>
+    <button class="btn-action" id="btn-yt">落單</button>
+    <div class="status" id="st-yt"></div>
+
+    <!-- live job panel — hidden until we have a task -->
+    <div id="yt-job-panel" style="display:none;margin-top:18px;padding:14px;border:1px solid #e5e5e5;border-radius:8px;background:#fafafa">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:13px;color:#666">當前任務</div>
+          <div id="yt-job-title" style="font-weight:600;font-size:15px;word-break:break-all">—</div>
+        </div>
+        <a id="yt-task-link" href="#" target="_blank" rel="noopener"
+           style="font-size:12px;color:#5865F2;text-decoration:underline">Notion task ↗</a>
+      </div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:13px;color:#666">進度</span>
+        <span id="yt-state-pill"
+              style="padding:4px 10px;border-radius:12px;background:#e8eafd;color:#3b3f8c;font-size:12px;font-weight:600">queued</span>
+        <span id="yt-state-detail" style="font-size:12px;color:#888"></span>
+      </div>
+      <div id="yt-progress-bar" style="margin-top:10px;display:flex;gap:4px">
+        <div class="yt-step" data-state="queued"     style="flex:1;height:6px;border-radius:3px;background:#5865F2"></div>
+        <div class="yt-step" data-state="downloading" style="flex:1;height:6px;border-radius:3px;background:#e5e5e5"></div>
+        <div class="yt-step" data-state="splitting"   style="flex:1;height:6px;border-radius:3px;background:#e5e5e5"></div>
+        <div class="yt-step" data-state="uploading"   style="flex:1;height:6px;border-radius:3px;background:#e5e5e5"></div>
+        <div class="yt-step" data-state="done"        style="flex:1;height:6px;border-radius:3px;background:#e5e5e5"></div>
+      </div>
+      <div id="yt-stems-wrap" style="display:none;margin-top:14px">
+        <div style="font-size:13px;color:#666;margin-bottom:6px">Stems（Drive 已備份）</div>
+        <div id="yt-stems-list" style="display:flex;flex-direction:column;gap:6px"></div>
+        <div id="yt-drive-link-wrap" style="margin-top:10px;font-size:12px;color:#666;word-break:break-all"></div>
+      </div>
+      <div id="yt-error-wrap" style="display:none;margin-top:14px;padding:10px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#900;font-size:13px"></div>
+    </div>
   </div>
 
   <!-- ===== 圖片裁切 ===== -->
@@ -681,6 +736,109 @@ async function loadFormats() {
   document.getElementById('supportedList').innerHTML = html + '</table>';
 }
 loadFormats();
+
+// ── ▶️ YouTube lane ─────────────────────────────────
+let ytMode = 'two';
+let ytPollTimer = null;
+let ytCurrentTaskId = null;
+
+document.querySelectorAll('#fg-yt .format-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#fg-yt .format-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ytMode = btn.dataset.mode;
+  });
+});
+
+const YT_STATES = ['queued','downloading','splitting','uploading','done'];
+function paintYtState(state, detail) {
+  const idx = YT_STATES.indexOf(state);
+  const safeIdx = idx < 0 ? 0 : idx;
+  document.querySelectorAll('#yt-progress-bar .yt-step').forEach((el, i) => {
+    el.style.background = i <= safeIdx ? (state === 'done' ? '#22c55e' : '#5865F2') : '#e5e5e5';
+  });
+  const pill = document.getElementById('yt-state-pill');
+  pill.textContent = state;
+  if (state === 'done') {
+    pill.style.background = '#dcfce7';
+    pill.style.color = '#166534';
+  } else if (state === 'error') {
+    pill.style.background = '#fee2e2';
+    pill.style.color = '#991b1b';
+  } else {
+    pill.style.background = '#e8eafd';
+    pill.style.color = '#3b3f8c';
+  }
+  document.getElementById('yt-state-detail').textContent = detail || '';
+}
+
+function renderStems(stems, driveDest) {
+  const wrap = document.getElementById('yt-stems-wrap');
+  const list = document.getElementById('yt-stems-list');
+  const driveWrap = document.getElementById('yt-drive-link-wrap');
+  if (!stems.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  list.innerHTML = stems.map(s => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:#fff;border:1px solid #e5e5e5;border-radius:6px">
+      <span style="font-size:13px;word-break:break-all">🎵 ${s.name}</span>
+      ${s.location ? `<span style="font-size:11px;color:#888;margin-left:8px">${s.location}</span>` : ''}
+    </div>
+  `).join('');
+  driveWrap.textContent = driveDest ? `Drive: ${driveDest}` : '';
+}
+
+async function pollYtJob(taskId) {
+  if (taskId !== ytCurrentTaskId) return; // task switched, abort
+  try {
+    const res = await fetch('/job-status?task=' + encodeURIComponent(taskId));
+    const data = await res.json();
+    if (data.error) { paintYtState('error', data.error); return; }
+    paintYtState(data.state || 'queued', data.status_text || '');
+    if (data.video_title) {
+      document.getElementById('yt-job-title').textContent = data.video_title;
+    }
+    renderStems(data.stems || [], data.drive_dest || '');
+    if (data.done || data.state === 'done') {
+      paintYtState('done', data.status_text || '完成');
+      return; // stop polling
+    }
+  } catch (e) {
+    // network blip — keep polling
+  }
+  ytPollTimer = setTimeout(() => pollYtJob(taskId), 4000);
+}
+
+document.getElementById('btn-yt').addEventListener('click', async () => {
+  const url = document.getElementById('yt-url-input').value.trim();
+  if (!url) { setStatus('st-yt', '請貼 URL', 'error'); return; }
+  const btn = document.getElementById('btn-yt');
+  btn.disabled = true; btn.textContent = '落單中…';
+  setStatus('st-yt', '建 Notion task 中…', 'info');
+  try {
+    const res = await fetch('/youtube-intake', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, mode: ytMode })
+    });
+    const data = await res.json();
+    if (!res.ok) { setStatus('st-yt', '錯誤：' + (data.error || res.status), 'error'); return; }
+    setStatus('st-yt', '✓ 已落單，Mac watcher 30s 內接手', 'success');
+    // show live panel
+    if (ytPollTimer) { clearTimeout(ytPollTimer); ytPollTimer = null; }
+    ytCurrentTaskId = data.task_id;
+    document.getElementById('yt-job-panel').style.display = 'block';
+    document.getElementById('yt-job-title').textContent = data.video_title || url;
+    const link = document.getElementById('yt-task-link');
+    link.href = data.task_url || '#';
+    paintYtState('queued', '等 Mac 接單');
+    renderStems([], '');
+    pollYtJob(data.task_id);
+  } catch (e) {
+    setStatus('st-yt', '連線錯誤：' + e, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '落單';
+  }
+});
 </script>
 </body>
 </html>
