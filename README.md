@@ -15,16 +15,23 @@ Flask/Docker file converter for images, documents, audio, and music notation.
 
 Deterministic conversions:
 
-- `.musicxml` / `.xml` / `.mxl` / `.mscz` -> `.pdf`, `.mid`, `.musicxml`, `.mscz`
-- `.mid` / `.midi` -> `.pdf`, `.musicxml`, `.mscz`
+- `.musicxml` / `.xml` / `.mxl` / `.mscz` -> `.pdf`, `.mid`, `.musicxml`, `.mscz`, `.wav`, `.mp3`, `.flac`, `.ogg`
+- `.mid` / `.midi` -> `.pdf`, `.musicxml`, `.mscz`, `.wav`, `.mp3`, `.flac`, `.ogg`
 
 Draft AI transcription:
 
 - audio (`.mp3`, `.wav`, `.flac`, `.aac`, `.ogg`, `.m4a`, `.opus`, `.wma`) -> `.mid`, `.musicxml`, `.pdf`
 - direct mode runs `basic-pitch`
 - demucs mode runs `demucs` first, then `basic-pitch`
+- melody cleanup can collapse noisy transcription to one monophonic line and optionally quantize to 1/8 or 1/16
 
 The audio transcription lane is lossy and should be treated as a draft score for human cleanup.
+
+Stem split:
+
+- audio -> `.zip` containing separate WAV stems
+- two-stem mode: vocals + instrumental
+- four-stem mode: vocals + drums + bass + other
 
 ## Runtime Tools
 
@@ -32,6 +39,7 @@ Required system tools:
 
 - `ffmpeg`
 - `musescore3` or another MuseScore CLI available as `MUSESCORE_BIN`
+- `demucs` for stem split and optional transcription pre-processing
 
 Python dependencies are pinned in `requirements.txt`, including `basic-pitch`, `demucs`, `music21`, `mido`, `librosa`, `pretty_midi`, `torch`, and `torchaudio`.
 

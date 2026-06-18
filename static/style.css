@@ -56,6 +56,10 @@ h1 { font-size:1.8rem; margin-bottom:20px; }
 .transcription-options { margin:0 0 16px; padding:12px 0; border-top:1px solid #eee; border-bottom:1px solid #eee; }
 .transcription-options .mode-row { margin-bottom:10px; }
 .tx-stems { margin-top:8px; }
+.check-row { display:flex; align-items:center; gap:8px; margin:10px 0; font-size:.88rem; color:#555; }
+.check-row input { width:16px; height:16px; }
+.small-label { margin-top:8px; font-size:.86rem; color:#555; }
+.select-control { width:100%; max-width:180px; padding:7px 10px; border:2px solid #ddd; border-radius:6px; background:#fff; font-size:.9rem; }
 
 /* Crop toolbar */
 .crop-toolbar { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }

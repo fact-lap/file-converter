@@ -7,6 +7,7 @@ from converters import image as img_converter
 from converters import document as doc_converter
 from converters import audio as audio_converter
 from converters import notation as notation_converter
+from converters import stems as stem_converter
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
@@ -39,6 +40,7 @@ MIME_TYPES = {
     "xml": "application/xml",
     "mxl": "application/vnd.recordare.musicxml",
     "mscz": "application/vnd.musescore",
+    "zip": "application/zip",
 }
 
 
@@ -91,6 +93,8 @@ def convert():
     quality = int(request.form.get("quality", 85))
     transcription_mode = request.form.get("transcription_mode", "direct").lower()
     stem = request.form.get("stem", "vocals").lower()
+    melody_mode = request.form.get("melody_mode", "false").lower() == "true"
+    quantize = request.form.get("quantize", "none").lower()
 
     if not file.filename or not output_format:
         return jsonify({"error": "缺少必要參數"}), 400
@@ -112,6 +116,8 @@ def convert():
                 output_format,
                 transcription_mode=transcription_mode,
                 stem=stem,
+                melody_mode=melody_mode,
+                quantize=quantize,
             )
         elif input_ext in audio_converter.SUPPORTED_INPUTS:
             if output_format not in audio_converter.CONVERTIBLE_TO:
@@ -137,6 +143,28 @@ def convert():
         notation_converter.output_filename_ext(output_format),
         base_name,
     )
+
+
+@app.route("/stem-split", methods=["POST"])
+def stem_split():
+    if "file" not in request.files:
+        return jsonify({"error": "沒有上傳檔案"}), 400
+    file = request.files["file"]
+    mode = request.form.get("stem_mode", "vocals_instrumental").lower()
+
+    if not file.filename:
+        return jsonify({"error": "缺少檔案"}), 400
+
+    filename = secure_filename(file.filename)
+    input_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
+
+    try:
+        result = stem_converter.split_to_zip(file.read(), input_ext, base_name, mode)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+
+    return _send(result, "zip", f"{base_name}_stems")
 
 
 @app.route("/compress", methods=["POST"])

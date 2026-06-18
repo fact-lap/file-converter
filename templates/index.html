@@ -14,6 +14,7 @@
     <button class="tab active" data-tab="convert">格式轉換</button>
     <button class="tab" data-tab="compress">圖片壓縮</button>
     <button class="tab" data-tab="audio-compress">音頻壓縮</button>
+    <button class="tab" data-tab="stem">Stem Split</button>
     <button class="tab" data-tab="crop">圖片裁切</button>
   </div>
 
@@ -39,6 +40,16 @@
         <button class="format-btn active" data-stem="vocals">vocals</button>
         <button class="format-btn" data-stem="instrumental">instrumental</button>
       </div>
+      <label class="check-row">
+        <input type="checkbox" id="melody-mode" checked>
+        <span>單聲部 melody cleanup</span>
+      </label>
+      <label class="ctrl-label small-label" for="quantize-select">量化</label>
+      <select class="select-control" id="quantize-select">
+        <option value="none">不量化</option>
+        <option value="eighth">1/8</option>
+        <option value="sixteenth" selected>1/16</option>
+      </select>
       <p class="compress-note">Audio → MIDI / MusicXML / PDF 屬 AI 草稿採譜，適合先出初稿再人手執譜。</p>
     </div>
     <button class="btn-action" id="btn-convert" disabled>轉換</button>
@@ -94,6 +105,26 @@
     <div class="size-result" id="asize-result" style="display:none">
       原始 <b id="ares-orig"></b> → 壓縮後 <b id="ares-comp"></b>（節省 <b id="ares-saved"></b>）
     </div>
+  </div>
+
+  <!-- ===== Stem Split ===== -->
+  <div class="panel" id="panel-stem">
+    <div class="drop-zone" id="dz-stem">
+      <div class="drop-icon">🎚</div>
+      <p>拖曳或 <label class="btn-upload" for="fi-stem">選擇音頻</label></p>
+      <input type="file" id="fi-stem" accept="audio/*" hidden>
+      <p class="file-hint" id="hint-stem">尚未選擇</p>
+    </div>
+    <div class="format-section" id="fs-stem" style="display:none">
+      <label>拆軌模式</label>
+      <div class="format-grid" id="fg-stem">
+        <button class="format-btn active" data-mode="vocals_instrumental">vocals + instrumental</button>
+        <button class="format-btn" data-mode="four_stems">vocals + drums + bass + other</button>
+      </div>
+      <p class="compress-note">輸出為 zip，內含分開的 WAV stem audio files。</p>
+    </div>
+    <button class="btn-action" id="btn-stem" disabled>拆軌並下載</button>
+    <div class="status" id="st-stem"></div>
   </div>
 
   <!-- ===== 圖片裁切 ===== -->
@@ -271,6 +302,8 @@ document.getElementById('btn-convert').addEventListener('click', async () => {
   const fd = new FormData(); fd.append('file',convertFile); fd.append('output_format',convertFmt);
   fd.append('transcription_mode', transcriptionMode);
   fd.append('stem', transcriptionStem);
+  fd.append('melody_mode', document.getElementById('melody-mode').checked ? 'true' : 'false');
+  fd.append('quantize', document.getElementById('quantize-select').value);
   try {
     const res = await fetch('/convert',{method:'POST',body:fd});
     if (!res.ok) { const e=await res.json(); setStatus('st-convert','錯誤：'+e.error,'error'); return; }
@@ -278,6 +311,36 @@ document.getElementById('btn-convert').addEventListener('click', async () => {
     setStatus('st-convert','完成！','success');
   } catch(e) { setStatus('st-convert','連線錯誤','error'); }
   finally { btn.disabled=false; btn.textContent='轉換'; }
+});
+
+// ── Stem Split ───────────────────────────────────
+let stemFile = null, stemMode = 'vocals_instrumental';
+setupDropZone('dz-stem', 'fi-stem', file => {
+  stemFile = file;
+  document.getElementById('hint-stem').textContent = `${file.name} (${fmtBytes(file.size)})`;
+  document.getElementById('fs-stem').style.display = 'block';
+  document.getElementById('btn-stem').disabled = false;
+  setStatus('st-stem', '');
+});
+document.querySelectorAll('#fg-stem .format-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#fg-stem .format-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    stemMode = btn.dataset.mode;
+  });
+});
+document.getElementById('btn-stem').addEventListener('click', async () => {
+  if (!stemFile) return;
+  const btn = document.getElementById('btn-stem');
+  btn.disabled=true; btn.textContent='拆軌中...'; setStatus('st-stem','處理中，長音檔可能需要幾分鐘...','info');
+  const fd = new FormData(); fd.append('file', stemFile); fd.append('stem_mode', stemMode);
+  try {
+    const res = await fetch('/stem-split',{method:'POST',body:fd});
+    if (!res.ok) { const e=await res.json(); setStatus('st-stem','錯誤：'+e.error,'error'); return; }
+    triggerDownload(await res.blob(), stemFile.name.replace(/\.[^.]+$/,'')+'_stems.zip');
+    setStatus('st-stem','完成！','success');
+  } catch(e) { setStatus('st-stem','連線錯誤','error'); }
+  finally { btn.disabled=false; btn.textContent='拆軌並下載'; }
 });
 
 // ── 圖片壓縮 ──────────────────────────────────────
