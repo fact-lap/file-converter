@@ -203,7 +203,11 @@ def _cleanup_melody_midi(in_path: str, out_path: str, quantize: str) -> None:
         cleaned.append(new_note)
         last = new_note
 
-    out_pm = pretty_midi.PrettyMIDI(initial_tempo=pm.estimate_tempo() or 120)
+    try:
+        tempo = pm.estimate_tempo()
+    except ValueError:
+        tempo = 120
+    out_pm = pretty_midi.PrettyMIDI(initial_tempo=tempo or 120)
     melody = pretty_midi.Instrument(program=pretty_midi.instrument_name_to_program("Acoustic Grand Piano"))
     melody.notes = cleaned
     out_pm.instruments.append(melody)
