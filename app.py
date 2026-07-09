@@ -272,9 +272,7 @@ def pitch_shift():
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        return jsonify({"error": f"pitch-shift crashed: {type(e).__name__}: {e}", "trace": tb[-1500:]}), 500
+        return jsonify({"error": f"pitch-shift crashed: {type(e).__name__}: {e}"}), 500
 
     sign = "+" if n >= 0 else ""
     out_name = f"{base_name}_pitch{sign}{n}st"
