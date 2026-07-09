@@ -13,6 +13,7 @@ from converters import document as doc_converter
 from converters import audio as audio_converter
 from converters import notation as notation_converter
 from converters import stems as stem_converter
+from converters import pitch as pitch_converter
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
@@ -233,6 +234,51 @@ def compress_audio():
         "X-Original-Size": str(orig_size),
         "X-Compressed-Size": str(compressed_size),
         "Access-Control-Expose-Headers": "X-Original-Size, X-Compressed-Size",
+    })
+
+
+@app.route("/pitch-shift", methods=["POST"])
+def pitch_shift():
+    """
+    移調 endpoint：±8 semitones，Rubber Band 為主、librosa fallback。
+    Params (multipart form):
+      file            (required) 音檔
+      semitones       (required) int/float，會 clamp 到 -8..+8
+      preserve_formants (optional bool) "true"/"1" 開 formant preservation
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "沒有上傳檔案"}), 400
+    file = request.files["file"]
+    raw_semi = request.form.get("semitones", "").strip()
+    preserve_formants = request.form.get("preserve_formants", "false").strip().lower() in ("1", "true", "yes", "on")
+
+    if not file.filename:
+        return jsonify({"error": "缺少檔案"}), 400
+    if raw_semi == "":
+        return jsonify({"error": "缺少 semitones 參數"}), 400
+
+    filename = secure_filename(file.filename)
+    input_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
+
+    if input_ext not in pitch_converter.SUPPORTED_INPUTS:
+        return jsonify({"error": f"不支援的音檔格式: {input_ext}"}), 400
+
+    try:
+        n = pitch_converter.clamp_semitones(raw_semi)
+        result, out_ext, engine = pitch_converter.pitch_shift(
+            file.read(), input_ext, n, preserve_formants=preserve_formants
+        )
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+
+    sign = "+" if n >= 0 else ""
+    out_name = f"{base_name}_pitch{sign}{n}st"
+    return _send(result, out_ext, out_name, {
+        "X-Pitch-Semitones": str(n),
+        "X-Pitch-Engine": engine,
+        "X-Pitch-Formants": "1" if preserve_formants else "0",
+        "Access-Control-Expose-Headers": "X-Pitch-Semitones, X-Pitch-Engine, X-Pitch-Formants",
     })
 
 

@@ -15,6 +15,7 @@
     <button class="tab" data-tab="compress">圖片壓縮</button>
     <button class="tab" data-tab="audio-compress">音頻壓縮</button>
     <button class="tab" data-tab="stem">Stem Split</button>
+    <button class="tab" data-tab="pitch">🎚 移調</button>
     <button class="tab" data-tab="youtube">▶️ YouTube</button>
     <button class="tab" data-tab="crop">圖片裁切</button>
   </div>
@@ -126,6 +127,27 @@
     </div>
     <button class="btn-action" id="btn-stem" disabled>拆軌並下載</button>
     <div class="status" id="st-stem"></div>
+  </div>
+
+  <!-- ===== 移調 Pitch Shift ===== -->
+  <div class="panel" id="panel-pitch">
+    <div class="drop-zone" id="dz-pitch">
+      <div class="drop-icon">🎚</div>
+      <p>拖曳或 <label class="btn-upload" for="fi-pitch">選擇音頻</label></p>
+      <input type="file" id="fi-pitch" accept="audio/*" hidden>
+      <p class="file-hint" id="hint-pitch">尚未選擇</p>
+    </div>
+    <div class="compress-controls" id="cc-pitch" style="display:none">
+      <label>移調 <span id="semi-label">0</span> semitones（−8 … +8）</label>
+      <input type="range" id="semi-slider" min="-8" max="8" value="0" step="1">
+      <label class="check-row">
+        <input type="checkbox" id="preserve-formants">
+        <span>Preserve formants（人聲較自然，只對 Rubber Band 有效）</span>
+      </label>
+      <p class="compress-note">引擎：Rubber Band（server-side）；±6 以上會開始有 artifacts。輸出保留原檔格式。</p>
+    </div>
+    <button class="btn-action" id="btn-pitch" disabled>移調並下載</button>
+    <div class="status" id="st-pitch"></div>
   </div>
 
   <!-- ===== YouTube lane ===== -->
@@ -485,6 +507,44 @@ document.getElementById('btn-acompress').addEventListener('click', async () => {
     setStatus('st-acompress','完成！','success');
   } catch(e) { setStatus('st-acompress','連線錯誤','error'); }
   finally { btn.disabled=false; btn.textContent='壓縮'; }
+});
+
+// ── 🎚 移調 ────────────────────────────────────────
+let pitchFile = null;
+setupDropZone('dz-pitch', 'fi-pitch', file => {
+  pitchFile = file;
+  document.getElementById('hint-pitch').textContent = `${file.name} (${fmtBytes(file.size)})`;
+  document.getElementById('cc-pitch').style.display = 'block';
+  document.getElementById('btn-pitch').disabled = false;
+  setStatus('st-pitch', '');
+});
+document.getElementById('semi-slider').addEventListener('input', e => {
+  const n = parseInt(e.target.value);
+  document.getElementById('semi-label').textContent = (n > 0 ? '+' : '') + n;
+});
+document.getElementById('btn-pitch').addEventListener('click', async () => {
+  if (!pitchFile) return;
+  const btn = document.getElementById('btn-pitch');
+  const semi = document.getElementById('semi-slider').value;
+  const preserve = document.getElementById('preserve-formants').checked;
+  btn.disabled = true; btn.textContent = '移調中...';
+  setStatus('st-pitch', `處理中（${semi > 0 ? '+' : ''}${semi} st）...`, 'info');
+  const fd = new FormData();
+  fd.append('file', pitchFile);
+  fd.append('semitones', semi);
+  fd.append('preserve_formants', preserve ? 'true' : 'false');
+  try {
+    const res = await fetch('/pitch-shift', { method: 'POST', body: fd });
+    if (!res.ok) { const e = await res.json(); setStatus('st-pitch', '錯誤：' + e.error, 'error'); return; }
+    const usedEngine = res.headers.get('X-Pitch-Engine') || '';
+    const sign = semi >= 0 ? '+' : '';
+    const ext = pitchFile.name.split('.').pop().toLowerCase();
+    const outExt = ext === 'wma' ? 'mp3' : ext;
+    triggerDownload(await res.blob(),
+      pitchFile.name.replace(/\.[^.]+$/, '') + `_pitch${sign}${semi}st.${outExt}`);
+    setStatus('st-pitch', `完成！engine=${usedEngine}`, 'success');
+  } catch (e) { setStatus('st-pitch', '連線錯誤', 'error'); }
+  finally { btn.disabled = false; btn.textContent = '移調並下載'; }
 });
 
 // ── 圖片裁切（互動預覽 + 縮放）──────────────────────
