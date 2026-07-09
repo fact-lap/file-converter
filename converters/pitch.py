@@ -96,7 +96,7 @@ def pitch_shift(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         wav_in = os.path.join(tmpdir, "in.wav")
-        wav_out = os.path.join(tmpdir, "out.wav")
+        wav_out = os.path.join(tmpdir, "shifted.wav")
         _ffmpeg_decode_to_wav(file_bytes, input_ext, wav_in)
 
         y, sr = sf.read(wav_in, always_2d=True)  # shape (frames, ch)
